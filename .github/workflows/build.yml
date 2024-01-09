@@ -1,0 +1,78 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: '*'
+    tags: '*'
+  pull_request:
+    branches: '*'
+
+permissions: write-all
+
+env:
+  APP_NAME: system_info
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win32
+          - os: macos-latest
+            platform: darwin
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Use Node.js 
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+        cache: 'yarn'
+    - name: Install ubuntu deps
+      if: matrix.os =='ubuntu-latest'
+      run: |
+        sudo apt update -y
+        sudo apt install -y mesa-common-dev libglu1-mesa-dev libegl1 libopengl-dev
+        sudo apt install -y fuse libfuse2 libgl-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb1-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-x11-dev libegl-dev libxcb-randr0-dev
+    - name: Initialization ...
+      run: |
+        yarn install
+    - name: Building ...
+      run: |
+        yarn build
+        npx nodegui-packer --init ${{env.APP_NAME}}
+        npx nodegui-packer --pack ./dist
+    - name: Inspecting ...
+      run: |
+        ls -lR dist
+        ls -lR deploy
+    - name: Packaging on windows ...
+      if: matrix.os =='windows-latest'
+      run: |
+        7z a -tzip ${{env.APP_NAME}}-${{ matrix.platform }}.zip -r ./deploy/${{ matrix.platform }}/build/${{env.APP_NAME}}/*
+    - name: Packaging on ubuntu ...
+      if: matrix.os =='ubuntu-latest'
+      run: |
+        7z a -tzip ${{env.APP_NAME}}-${{ matrix.platform }}.zip -r ./deploy/${{ matrix.platform }}/build/${{env.APP_NAME}}/*
+    - name: Packaging on macos...
+      if: matrix.os =='macos-latest'
+      run: |
+        7z a -tzip ${{env.APP_NAME}}-${{ matrix.platform }}.zip -r ./deploy/${{ matrix.platform }}/build/${{env.APP_NAME}}.app
+        cp deploy/darwin/build/${{env.APP_NAME}}.dmg ${{env.APP_NAME}}-${{ matrix.platform }}.dmg
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: ${{env.APP_NAME}}-${{ matrix.platform }}*
+        
+        
